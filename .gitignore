@@ -11,8 +11,8 @@
 *.dwo
 *.sh
 /DTS-OrangePiOne/*
-!/DTS-OrangePiOne/leds-blink.dtsi
-!/DTS-OrangePiOne/sun8i-h3-orangepi-one.dts
+!/DTS/leds-blink.dtsi
+!/DTS/sun8i-h3-orangepi-one.dts
 /.tmp_versions
 /arch-include
 /include
