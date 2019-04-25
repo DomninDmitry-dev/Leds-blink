@@ -10,7 +10,7 @@
 *.project
 *.dwo
 *.sh
-/DTS-OrangePiOne/*
+/DTS/*
 !/DTS/leds-blink.dtsi
 !/DTS/sun8i-h3-orangepi-one.dts
 /.tmp_versions

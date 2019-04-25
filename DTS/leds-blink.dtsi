@@ -8,7 +8,7 @@
 		target = <&pio>;
 		__overlay__ {
 			gpio_opc: gpio_opc {
-				pins = "PA7","PA8","PA9";
+				pins = "PC0","PC1","PC2","PA7","PA8","PA9";
 				function = "gpio_out";
 			};
 		};
@@ -18,12 +18,15 @@
 		target-path = "/";
 		__overlay__ {
 			gpio_leds@0 {
-				compatible = "test,gpiotest";
+				compatible = "orangepi,leds-blink";
 				pinctrl-names = "default";
 				pinctrl-0 = <&gpio_opc>;
-				leds-gpios = <&pio 0 7 0>,
-							 <&pio 0 8 0>,
-							 <&pio 0 9 0>;
+				gpiopins-gpios = <&pio 0 64 0>,
+							 	 <&pio 0 65 0>,
+							 	 <&pio 0 66 0>,
+							 	 <&pio 0 7 0>,
+							 	 <&pio 0 8 0>,
+							 	 <&pio 0 9 0>;
 				//btn-gpios = <&pio 0 3 0>;
 				interrupt-parent = <&pio>;
 				interrupts = <0 3 8>; // <GIC_SPI 0 IRQ_TYPE_LEVEL_LOW> // PA3

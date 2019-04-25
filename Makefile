@@ -1,5 +1,5 @@
-KDIR = $(HOME)/Kernels/linux-4.14.91
-//KDIR = $(HOME)/CreateImageOP/cache/sources/linux-mainline/linux-4.14.y
+//KDIR = $(HOME)/Kernels/linux-4.14.91
+KDIR = $(HOME)/CreateImageOP/cache/sources/linux-mainline/linux-4.14.y
 //KDIR = /lib/modules/$(shell uname -r)/build
 ARCH = arm
 CCFLAGS = -C
@@ -8,7 +8,8 @@ COMPILER = arm-unknown-linux-gnueabihf-
 PWD = $(shell pwd)
 TARGET = leds-blink
 
-obj-m   := $(TARGET).o 
+obj-m   := $(TARGET).o
+CFLAGS_$(TARGET_MOD).o := -DDEBUG
 
 all:
 	$(MAKE) $(CCFLAGS) $(KDIR) M=$(PWD) ARCH=$(ARCH) CROSS_COMPILE=$(COMPILER) modules

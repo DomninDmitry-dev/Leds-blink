@@ -15,29 +15,45 @@
 #include <linux/gpio/consumer.h>
 #include <asm/irq.h>
 
-static struct gpio_desc *green, *red, *yellow, *btn;
+enum leds_pin {
+	PIN_P1,	/* Optional */
+	PIN_P2,	/* Optional */
+	PIN_P3,	/* Optional */
+	PIN_P4,	/* Optional */
+	PIN_P5,	/* Optional */
+	PIN_P6,	/* Optional */
+	PIN_MAX
+};
 
-// Callback простого таймера
-static struct timer_list my_timer;
-static u8 toggle = 0;
-static unsigned int irq;
-
-static irq_handler_t btn_pushed_irq(unsigned int irq, void *dev_id, struct pt_regs *regs)
+struct leds_data {
+	struct platform_device *pdev;
+	struct gpio_desc *gpio[PIN_MAX];
+	struct gpio_desc *btn;
+	struct timer_list my_timer;
+	u8 toggle;
+	unsigned int irq;
+	int gpiocnt;
+	int tms;
+};
+/*----------------------------------------------------------------------------*/
+static irqreturn_t btn_irq(int irq, void *data)
 {
-	int state;
-	/* read the button value and change the led state */
-	state = gpiod_get_value(btn);
-	gpiod_set_value(red, state);
-	pr_info("btn interrupt: Interrupt! btn state is %d)\n", state);
-	return (irq_handler_t)IRQ_HANDLED;
-}
+	struct leds_data *pdata = data;
+	int state = gpiod_get_value(pdata->btn);
+	dev_info(&pdata->pdev->dev, "Interrupt! btn state is %d)\n", state);
 
+	return (irqreturn_t)IRQ_HANDLED;
+}
+/*----------------------------------------------------------------------------*/
 static void my_timer_callback(struct timer_list *t)
 {
-	//pr_info("Timer Handler called.\n");
-	mod_timer(&my_timer, jiffies + HZ / 5); // Period 1s
-	//pr_info("Jiffies: %ld\n", jiffies);
-	switch(toggle)
+	struct leds_data *pdata = container_of(t, struct leds_data, my_timer);
+
+	mod_timer(&pdata->my_timer, jiffies + HZ / (1000 / pdata->tms));
+	dev_info(&pdata->pdev->dev, "Jiffies: %ld\n", jiffies);
+	//dev_info(&pdata->pdev->dev, "pdata->tms: %d\n", pdata->tms);
+
+	/*switch(toggle)
 	{
 	case 0:
 		gpiod_set_value(green, 0);
@@ -62,77 +78,98 @@ static void my_timer_callback(struct timer_list *t)
 	}
 	toggle++;
 	if(toggle == 4) toggle = 0;
+	*/
 }
-
+/*----------------------------------------------------------------------------*/
 static int my_pdrv_probe(struct platform_device *pdev)
 {
-	int retval;
-	struct device *dev = &pdev->dev;
+	int ret, pins;
+	struct leds_data *pdata;
 
-	pr_info("GPIO: Starting module\n");
+	dev_info(&pdev->dev, "Starting module\n");
+
+	pdata = devm_kzalloc(&pdev->dev, sizeof(*pdata), GFP_KERNEL);
+	if (!pdata) {
+		dev_err(&pdev->dev, "Error mem <devm_kzalloc> \n");
+		return -ENOMEM;
+	}
+
+	pdata->gpiocnt = gpiod_count(&pdev->dev, "gpiopins");
+	if(pdata->gpiocnt < 0) {
+		dev_err(&pdev->dev, "Error get count gpio! \n");
+		goto fail;
+	}
+	dev_info(&pdev->dev, "Gpio count: %d\n", pdata->gpiocnt);
+
+	for (pins = 0; pins < pdata->gpiocnt; pins++) {
+		pdata->gpio[pins] = devm_gpiod_get_index(&pdev->dev, "gpiopins", pins,
+							  GPIOD_OUT_LOW);
+		if (IS_ERR(pdata->gpio[pins])) {
+			ret = PTR_ERR(pdata->gpio[pins]);
+			dev_err(&pdev->dev, "Error get index gpio %d, err %d! \n", pins, ret);
+			goto fail;
+		}
+		ret = gpiod_direction_output(pdata->gpio[pins], 0);
+		if(ret < 0) {
+			dev_err(&pdev->dev, "Error direction output gpio %d, err %d! \n", pins, ret);
+			goto fail;
+		}
+	}
+
+	pdata->irq = platform_get_irq(pdev, 0);
+	dev_info(&pdev->dev, "irq = %d\n", pdata->irq);
+	ret = devm_request_threaded_irq(&pdev->dev, pdata->irq, NULL,\
+								btn_irq, \
+								IRQF_TRIGGER_FALLING | IRQF_ONESHOT, \
+								"my-button", pdata);
+	if(ret < 0) {
+		dev_err(&pdev->dev, "Error IRQ - %d\n", ret);
+		goto fail;
+	}
 
 	// Использование обычного приближенного таймера
-	timer_setup( &my_timer, my_timer_callback, 0);
-	pr_info("Starting timer to fire in 200ms (%ld)\n", jiffies);
-	retval = mod_timer(&my_timer, jiffies + HZ / 5); // Period 1s
-	if(retval) pr_err("Error in mod_timer\n");
-
-	green = gpiod_get_index(dev, "leds", 0, GPIOD_OUT_HIGH);
-	red = gpiod_get_index(dev, "leds", 1, GPIOD_OUT_HIGH);
-	yellow = gpiod_get_index(dev, "leds", 2, GPIOD_OUT_HIGH);
-	//btn = gpiod_get(dev, "btn", GPIOD_IN);
-
-	//irq = gpiod_to_irq(btn);
-	irq = platform_get_irq(pdev, 0);
-	retval = request_threaded_irq(irq, NULL,
-								(irq_handler_t)btn_pushed_irq,
-								IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
-								"gpio-descriptor-sample", NULL);
-
-	retval = gpiod_direction_output(green, 0);
-	if(retval)
-	{
-		pr_err("GPIO: Error led-green <gpiod_direction_output> \n");
-		return -1;
-	}
-	retval = gpiod_direction_output(red, 0);
-	if(retval)
-	{
-		pr_err("GPIO: Error led-red <gpiod_direction_output> \n");
-		return -1;
-	}
-	retval = gpiod_direction_output(yellow, 0);
-	if(retval)
-	{
-		pr_err("GPIO: Error led-yellow <gpiod_direction_output> \n");
-		return -1;
+	pdata->tms = 1000;
+	timer_setup(&pdata->my_timer, my_timer_callback, 0);
+	dev_info(&pdev->dev, "Starting timer to fire in %dms (%ld)\n", pdata->tms, jiffies);
+	ret = mod_timer(&pdata->my_timer, jiffies + HZ / (1000 / pdata->tms));
+	if(ret) {
+		dev_err(&pdev->dev, "Error init timer - %d\n", ret);
+		goto fail;
 	}
 
+	pdata->pdev = pdev;
+	platform_set_drvdata(pdev, pdata);
+
+	dev_info(&pdev->dev, "Probe started\n");
     return 0;
+
+fail:
+	devm_kfree(&pdev->dev, pdata);
+	dev_err(&pdev->dev, "Probe fail!\n");
+	return -1;
 }
+/*----------------------------------------------------------------------------*/
 static int my_pdrv_remove(struct platform_device *pdev)
 {
-	gpiod_set_value(green, 0);
-	gpiod_put(green);
-	gpiod_set_value(red, 0);
-	gpiod_put(red);
-	gpiod_set_value(yellow, 0);
-	gpiod_put(yellow);
-	gpiod_put(btn);
-	free_irq(irq, NULL);
-	del_timer(&my_timer);
-    pr_info("GPIO: remove module\n");
+	struct leds_data *pdata = platform_get_drvdata(pdev);
+	int pins;
+	devm_free_irq(&pdev->dev, pdata->irq, pdata);
+	for (pins = 0; pins < pdata->gpiocnt; pins++) {
+		gpiod_put(pdata->gpio[pins]);
+	}
+	del_timer(&pdata->my_timer);
+	devm_kfree(&pdev->dev, pdata);
+	dev_info(&pdev->dev, "Removing module\n");
     return 0;
 }
-
+/*----------------------------------------------------------------------------*/
 static const struct of_device_id gpio_dt_ids[] = {
-    { .compatible = "test,leds-blink" },
+    { .compatible = "orangepi,leds-blink" },
     { /* sentinel */ },
 };
-
 MODULE_DEVICE_TABLE(of, gpio_dt_ids);
-
-static struct platform_driver mypdrv = {
+/*----------------------------------------------------------------------------*/
+static struct platform_driver leds_driver = {
     .probe      = my_pdrv_probe,
     .remove     = my_pdrv_remove,
     .driver     = {
@@ -141,7 +178,9 @@ static struct platform_driver mypdrv = {
         .owner    = THIS_MODULE,
     },
 };
-module_platform_driver(mypdrv);
+module_platform_driver(leds_driver);
+/*----------------------------------------------------------------------------*/
+MODULE_DESCRIPTION("Leds blink driver");
 MODULE_AUTHOR("Domnin Dmitry");
 MODULE_LICENSE("GPL");
-
+/*----------------------------------------------------------------------------*/
