@@ -3,11 +3,11 @@
 
 / {
 	compatible = "allwinner,sun8i-h3";
-
+	
 	fragment@0 {
 		target = <&pio>;
 		__overlay__ {
-			gpio_opc: gpio_opc {
+			gpio_out_opc: gpio_out_opc@0 {
 				pins = "PC0","PC1","PC2","PA7","PA8","PA9";
 				function = "gpio_out";
 			};
@@ -15,19 +15,29 @@
 	};
 	
 	fragment@1 {
+		target = <&pio>;
+		__overlay__ {
+			gpio_in_opc: gpio_in_opc@0 {
+				pins = "PA3";
+				function = "gpio_in";
+			};
+		};
+	};
+	
+	fragment@2 {
 		target-path = "/";
 		__overlay__ {
 			gpio_leds@0 {
 				compatible = "orangepi,leds-blink";
 				pinctrl-names = "default";
-				pinctrl-0 = <&gpio_opc>;
+				pinctrl-0 = <&gpio_out_opc>, <&gpio_in_opc>;
 				gpiopins-gpios = <&pio 0 64 0>,
 							 	 <&pio 0 65 0>,
 							 	 <&pio 0 66 0>,
 							 	 <&pio 0 7 0>,
 							 	 <&pio 0 8 0>,
 							 	 <&pio 0 9 0>;
-				//btn-gpios = <&pio 0 3 0>;
+				btn-gpios = <&pio 0 3 0>;
 				interrupt-parent = <&pio>;
 				interrupts = <0 3 8>; // <GIC_SPI 0 IRQ_TYPE_LEVEL_LOW> // PA3
 				status = "okay";
