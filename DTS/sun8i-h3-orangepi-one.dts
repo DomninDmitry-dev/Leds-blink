@@ -106,6 +106,22 @@
 		pinctrl-0 = <&gpiotest_opc>;
 		led-gpios = <&pio 0 7 GPIO_ACTIVE_HIGH>;
 	};*/
+	
+	/*gpio_leds {
+			compatible = "orangepi,leds-blink";
+			pinctrl-names = "default";
+			pinctrl-0 = <&gpio_out_opc>, <&gpio_in_opc>;
+			gpiopins-gpios = <&pio 0 64 0>,
+						 	 <&pio 0 65 0>,
+						 	 <&pio 0 66 0>,
+						 	 <&pio 0 7 0>,
+						 	 <&pio 0 8 0>,
+						 	 <&pio 0 9 0>;
+			btn-gpios = <&pio 0 3 0>;
+			interrupt-parent = <&pio>;
+			interrupts = <GIC_SPI 3 IRQ_TYPE_EDGE_FALLING>; // PA3
+			status = "okay";
+		};*/
 
 	reg_sy8113b: gpio-regulator {
 		compatible = "regulator-gpio";
@@ -158,6 +174,22 @@
 	};
 };
 
+&i2c0 {
+	status = "okay";
+	#address-cells = <1>;
+    #size-cells = <0>;
+	
+	mcp23016@20 {
+        compatible = "microchip,mcp23016";
+        pinctrl-names = "default";
+        reg = <0x20>;
+        pinctrl-0 = <&mcp23016_int>;
+        interrupt-parent = <&pio>;
+        interrupts = <GIC_SPI 201 IRQ_TYPE_LEVEL_LOW>; // PG9
+        status = "okay";
+    };
+};
+
 &i2s2 {
 	status = "okay";
 };
@@ -192,6 +224,18 @@
 	/*gpiotest_opc: gpiotest_pins@0 {
 		pins = "PA7";
 		function = "gpio_out";
+	};*/
+	mcp23016_int: pin_int {
+		pins = "PG9";
+		function = "gpio_in";
+	};
+	/*gpio_out_opc: gpio_out_opc@0 {
+		pins = "PC0","PC1","PC2","PA7","PA8","PA9";
+		function = "gpio_out";
+	};
+	gpio_in_opc: gpio_in_opc@0 {
+		pins = "PA3";
+		function = "gpio_in";
 	};*/
 };
 

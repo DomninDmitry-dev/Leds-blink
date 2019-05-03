@@ -9,6 +9,7 @@ PWD = $(shell pwd)
 TARGET = leds-blink
 
 obj-m   := $(TARGET).o
+
 CFLAGS_$(TARGET_MOD).o := -DDEBUG
 
 all:

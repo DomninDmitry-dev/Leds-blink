@@ -101,6 +101,10 @@ static int my_pdrv_probe(struct platform_device *pdev)
 	}
 	dev_info(&pdev->dev, "Gpio count: %d\n", pdata->gpiocnt);
 
+	/*
+	 * Если используется devm_gpiod_get_index, то gpiod_put вызывается
+	 * автоматически при выгрузке модуля
+	 * */
 	for (pins = 0; pins < pdata->gpiocnt; pins++) {
 		pdata->gpio[pins] = devm_gpiod_get_index(&pdev->dev, "gpiopins", pins,
 							  GPIOD_OUT_LOW);
@@ -116,12 +120,24 @@ static int my_pdrv_probe(struct platform_device *pdev)
 		}
 	}
 
+	pdata->btn = devm_gpiod_get(&pdev->dev, "btn", GPIOD_IN);
+	if (IS_ERR(pdata->btn)) {
+			ret = PTR_ERR(pdata->btn);
+			dev_err(&pdev->dev, "Error get btn gpio, err %d! \n", ret);
+			goto fail;
+		}
+
 	pdata->irq = platform_get_irq(pdev, 0);
+	//pdata->irq = gpiod_to_irq(pdata->btn);
 	dev_info(&pdev->dev, "irq = %d\n", pdata->irq);
+	/*
+	 * Если используется devm_request_threaded_irq, то devm_free_irq вызывается
+	 * автоматически при выгрузке модуля
+	 * */
 	ret = devm_request_threaded_irq(&pdev->dev, pdata->irq, NULL,\
 								btn_irq, \
 								IRQF_TRIGGER_FALLING | IRQF_ONESHOT, \
-								"my-button", pdata);
+								"leds-button", pdata);
 	if(ret < 0) {
 		dev_err(&pdev->dev, "Error IRQ - %d\n", ret);
 		goto fail;
@@ -152,11 +168,6 @@ fail:
 static int my_pdrv_remove(struct platform_device *pdev)
 {
 	struct leds_data *pdata = platform_get_drvdata(pdev);
-	int pins;
-	devm_free_irq(&pdev->dev, pdata->irq, pdata);
-	for (pins = 0; pins < pdata->gpiocnt; pins++) {
-		gpiod_put(pdata->gpio[pins]);
-	}
 	del_timer(&pdata->my_timer);
 	devm_kfree(&pdev->dev, pdata);
 	dev_info(&pdev->dev, "Removing module\n");
