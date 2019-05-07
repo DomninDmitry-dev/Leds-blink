@@ -3,8 +3,8 @@ KDIR = $(HOME)/CreateImageOP/cache/sources/linux-mainline/linux-4.14.y
 //KDIR = /lib/modules/$(shell uname -r)/build
 ARCH = arm
 CCFLAGS = -C
-//COMPILER = arm-linux-gnueabihf-
-COMPILER = arm-unknown-linux-gnueabihf-
+COMPILER = arm-linux-gnueabihf-
+//COMPILER = arm-unknown-linux-gnueabihf-
 PWD = $(shell pwd)
 TARGET = leds-blink
 

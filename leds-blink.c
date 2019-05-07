@@ -33,7 +33,7 @@ struct leds_data {
 	u8 toggle;
 	unsigned int irq;
 	int gpiocnt;
-	int tms;
+	unsigned int tms;
 };
 /*----------------------------------------------------------------------------*/
 static irqreturn_t btn_irq(int irq, void *data)
@@ -48,9 +48,12 @@ static irqreturn_t btn_irq(int irq, void *data)
 static void my_timer_callback(struct timer_list *t)
 {
 	struct leds_data *pdata = container_of(t, struct leds_data, my_timer);
+	unsigned int timej;
 
-	mod_timer(&pdata->my_timer, jiffies + HZ / (1000 / pdata->tms));
+	timej = (pdata->tms >= 1000) ? (HZ * (pdata->tms / 1000)) : (HZ / (1000 / pdata->tms));
+	mod_timer(&pdata->my_timer, jiffies + timej);
 	dev_info(&pdata->pdev->dev, "Jiffies: %ld\n", jiffies);
+	pr_debug("pr_debug: Jiffies: %ld\n", jiffies);
 	//dev_info(&pdata->pdev->dev, "pdata->tms: %d\n", pdata->tms);
 
 	/*switch(toggle)
@@ -85,6 +88,7 @@ static int my_pdrv_probe(struct platform_device *pdev)
 {
 	int ret, pins;
 	struct leds_data *pdata;
+	unsigned int timej;
 
 	dev_info(&pdev->dev, "Starting module\n");
 
@@ -144,13 +148,23 @@ static int my_pdrv_probe(struct platform_device *pdev)
 	}
 
 	// Использование обычного приближенного таймера
-	pdata->tms = 1000;
-	timer_setup(&pdata->my_timer, my_timer_callback, 0);
-	dev_info(&pdev->dev, "Starting timer to fire in %dms (%ld)\n", pdata->tms, jiffies);
-	ret = mod_timer(&pdata->my_timer, jiffies + HZ / (1000 / pdata->tms));
-	if(ret) {
-		dev_err(&pdev->dev, "Error init timer - %d\n", ret);
-		goto fail;
+	pdata->tms = 0;
+	if(of_find_property(pdev->dev.of_node, "timer_ms", NULL)) {
+		of_property_read_u32(pdev->dev.of_node, "timer_ms", &pdata->tms);
+		if(pdata->tms) {
+			timer_setup(&pdata->my_timer, my_timer_callback, 0);
+			dev_info(&pdev->dev, "Starting timer to fire in %dms (%ld)\n", pdata->tms, jiffies);
+			timej = (pdata->tms >= 1000) ? (HZ * (pdata->tms / 1000)) : (HZ / (1000 / pdata->tms));
+			ret = mod_timer(&pdata->my_timer, jiffies + timej);
+			if(ret) {
+				dev_err(&pdev->dev, "Error init timer - %d\n", ret);
+				goto fail;
+			}
+		}
+		else dev_info(&pdev->dev, "Timer value NULL");
+	}
+	else {
+		dev_info(&pdev->dev, "Timer not init!");
 	}
 
 	pdata->pdev = pdev;
@@ -168,7 +182,7 @@ fail:
 static int my_pdrv_remove(struct platform_device *pdev)
 {
 	struct leds_data *pdata = platform_get_drvdata(pdev);
-	del_timer(&pdata->my_timer);
+	if(pdata->tms) del_timer(&pdata->my_timer);
 	devm_kfree(&pdev->dev, pdata);
 	dev_info(&pdev->dev, "Removing module\n");
     return 0;
