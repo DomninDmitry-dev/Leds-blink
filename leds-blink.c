@@ -14,6 +14,7 @@
 #include <linux/of.h>                   /* For DT*/
 #include <linux/gpio/consumer.h>
 #include <asm/irq.h>
+#include <linux/random.h>
 
 enum leds_pin {
 	PIN_P1,	/* Optional */
@@ -30,10 +31,12 @@ struct leds_data {
 	struct gpio_desc *gpio[PIN_MAX];
 	struct gpio_desc *btn;
 	struct timer_list my_timer;
-	u8 toggle;
 	unsigned int irq;
 	int gpiocnt;
 	unsigned int tms;
+	u32 ledMode;
+	u8 tmp;
+	u8 flag;
 };
 /*----------------------------------------------------------------------------*/
 static irqreturn_t btn_irq(int irq, void *data)
@@ -49,39 +52,60 @@ static void my_timer_callback(struct timer_list *t)
 {
 	struct leds_data *pdata = container_of(t, struct leds_data, my_timer);
 	unsigned int timej;
+	u8 cnt;
 
-	timej = (pdata->tms >= 1000) ? (HZ * (pdata->tms / 1000)) : (HZ / (1000 / pdata->tms));
-	mod_timer(&pdata->my_timer, jiffies + timej);
-	dev_info(&pdata->pdev->dev, "Jiffies: %ld\n", jiffies);
-	pr_debug("pr_debug: Jiffies: %ld\n", jiffies);
-	//dev_info(&pdata->pdev->dev, "pdata->tms: %d\n", pdata->tms);
+	if(pdata->ledMode != 0) {
+		timej = (pdata->tms >= 1000) ? (HZ * (pdata->tms / 1000)) : (HZ / (1000 / pdata->tms));
+		mod_timer(&pdata->my_timer, jiffies + timej);
+		//dev_info(&pdata->pdev->dev, "Jiffies: %ld\n", jiffies);
+		pr_debug("pr_debug: Jiffies: %ld\n", jiffies);
+	}
 
-	/*switch(toggle)
+	switch(pdata->ledMode)
 	{
 	case 0:
-		gpiod_set_value(green, 0);
-		gpiod_set_value(red, 0);
-		gpiod_set_value(yellow, 0);
+		for(cnt=0; cnt<pdata->gpiocnt; cnt++)
+			gpiod_set_value(pdata->gpio[cnt], 1);
 		break;
 	case 1:
-		gpiod_set_value(green, 1);
-		gpiod_set_value(red, 0);
-		gpiod_set_value(yellow, 0);
+		if(pdata->tmp == 0) pdata->tmp = 1;
+		for(cnt=0; cnt<pdata->gpiocnt; cnt++){
+			if((pdata->tmp >> cnt) & 1)
+				gpiod_set_value(pdata->gpio[cnt], 1);
+			else gpiod_set_value(pdata->gpio[cnt], 0);
+		}
+		pdata->tmp <<= 1;
+		for(cnt=0; cnt<pdata->gpiocnt; cnt++)
+			if((pdata->tmp >> cnt) & 1) break;
+		if(cnt == pdata->gpiocnt) pdata->tmp = 1;
 		break;
 	case 2:
-		gpiod_set_value(green, 0);
-		gpiod_set_value(red, 1);
-		gpiod_set_value(yellow, 0);
+		if(pdata->tmp == 0) pdata->tmp = 1;
+		for(cnt=0; cnt<pdata->gpiocnt; cnt++){
+			if((pdata->tmp >> cnt) & 1)
+				gpiod_set_value(pdata->gpio[cnt], 1);
+			else gpiod_set_value(pdata->gpio[cnt], 0);
+		}
+		if(!pdata->flag){
+			pdata->tmp <<= 1;
+			for(cnt=0; cnt<pdata->gpiocnt; cnt++)
+				if((pdata->tmp >> cnt) & 1) break;
+			if(cnt+1 == pdata->gpiocnt) pdata->flag = 1;
+		}
+		else {
+			pdata->tmp >>= 1;
+			if(pdata->tmp & 1) pdata->flag = 0;
+		}
 		break;
 	case 3:
-		gpiod_set_value(green, 0);
-		gpiod_set_value(red, 0);
-		gpiod_set_value(yellow, 1);
+		for(cnt=0; cnt<pdata->gpiocnt; cnt++){
+			if((pdata->tmp >> cnt) & 1)
+				gpiod_set_value(pdata->gpio[cnt], 1);
+			else gpiod_set_value(pdata->gpio[cnt], 0);
+		}
+		get_random_bytes(&pdata->tmp, 1);
 		break;
 	}
-	toggle++;
-	if(toggle == 4) toggle = 0;
-	*/
 }
 /*----------------------------------------------------------------------------*/
 static int my_pdrv_probe(struct platform_device *pdev)
@@ -167,6 +191,13 @@ static int my_pdrv_probe(struct platform_device *pdev)
 		dev_info(&pdev->dev, "Timer not init!");
 	}
 
+	// Считываем режим работы светодиодов
+	pdata->ledMode = 0;
+	if(of_find_property(pdev->dev.of_node, "mode", NULL)) {
+		of_property_read_u32(pdev->dev.of_node, "mode", &pdata->ledMode);
+	}
+
+	pdata->flag = 0;
 	pdata->pdev = pdev;
 	platform_set_drvdata(pdev, pdata);
 
@@ -182,8 +213,11 @@ fail:
 static int my_pdrv_remove(struct platform_device *pdev)
 {
 	struct leds_data *pdata = platform_get_drvdata(pdev);
+	u8 cnt;
 	if(pdata->tms) del_timer(&pdata->my_timer);
 	devm_kfree(&pdev->dev, pdata);
+	for(cnt=0; cnt<pdata->gpiocnt; cnt++)
+		gpiod_set_value(pdata->gpio[cnt], 0);
 	dev_info(&pdev->dev, "Removing module\n");
     return 0;
 }

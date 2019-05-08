@@ -28,6 +28,9 @@ compile_dts:
 compile_dtsi:
 	@./mod.sh compile-dtsi
 	
+reboot_dev:
+	@./mod.sh reboot
+	
 clean: 
 	@rm -f *.o .*.cmd .*.flags *.mod.c *.order *.dwo *.mod.dwo .*.dwo
 	@rm -f .*.*.cmd *~ *.*~ TODO.*

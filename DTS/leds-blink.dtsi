@@ -40,7 +40,8 @@
 				btn-gpios = <&pio 0 3 0>;
 				interrupt-parent = <&pio>;
 				interrupts = <0 3 2>; // <GIC_SPI 0 IRQ_TYPE_EDGE_FALLING> // PA3
-				timer_ms = <300>;
+				timer_ms = <200>;
+				mode = <3>;
 				status = "okay";
 			};
 		};
