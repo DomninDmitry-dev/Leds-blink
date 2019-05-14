@@ -15,6 +15,7 @@
 #include <linux/gpio/consumer.h>
 #include <asm/irq.h>
 #include <linux/random.h>
+#include <linux/device.h>
 
 enum leds_pin {
 	PIN_P1,	/* Optional */
@@ -25,7 +26,7 @@ enum leds_pin {
 	PIN_P6,	/* Optional */
 	PIN_MAX
 };
-
+/*----------------------------------------------------------------------------*/
 struct leds_data {
 	struct platform_device *pdev;
 	struct gpio_desc *gpio[PIN_MAX];
@@ -37,13 +38,58 @@ struct leds_data {
 	u32 ledMode;
 	u8 tmp;
 	u8 flag;
+	struct device_attribute dev_attr_tms;
+	struct device_attribute dev_attr_ledmode;
 };
+/*----------------------------------------------------------------------------*/
+static ssize_t tms_show(struct device *child, struct device_attribute *attr, char *buf)
+{
+	struct leds_data *pdata = container_of(attr, struct leds_data, dev_attr_tms);
+
+	return sprintf(buf, "%d\n", pdata->tms);
+}
+/*----------------------------------------------------------------------------*/
+static ssize_t tms_store(struct device *child, struct device_attribute *attr, const char *buf, size_t len)
+{
+	struct leds_data *pdata = container_of(attr, struct leds_data, dev_attr_tms);
+
+    sscanf(buf, "%d", &pdata->tms);
+    dev_info(&pdata->pdev->dev, "sysfs_notify store %s: %d\n", pdata->dev_attr_tms.attr.name, pdata->tms);
+
+    return len;
+}
+/*----------------------------------------------------------------------------*/
+static ssize_t ledmode_show(struct device *child, struct device_attribute *attr, char *buf)
+{
+	struct leds_data *pdata = container_of(attr, struct leds_data, dev_attr_ledmode);
+
+	return sprintf(buf, "%d\n", pdata->ledMode);
+}
+/*----------------------------------------------------------------------------*/
+static ssize_t ledmode_store(struct device *child, struct device_attribute *attr, const char *buf, size_t len)
+{
+	struct leds_data *pdata = container_of(attr, struct leds_data, dev_attr_ledmode);
+	u32 mode;
+
+	pdata->flag = 0;
+	pdata->tmp = 0;
+    sscanf(buf, "%d", &mode);
+    dev_info(&pdata->pdev->dev, "sysfs_notify store %s: %d\n", pdata->dev_attr_tms.attr.name, mode);
+
+    if(mode > 3) return -1;
+    else pdata->ledMode = mode;
+    return len;
+}
 /*----------------------------------------------------------------------------*/
 static irqreturn_t btn_irq(int irq, void *data)
 {
 	struct leds_data *pdata = data;
 	int state = gpiod_get_value(pdata->btn);
+	u8 cnt;
 	dev_info(&pdata->pdev->dev, "Interrupt! btn state is %d)\n", state);
+	if(++pdata->ledMode == 4) pdata->ledMode = 0;
+	for(cnt=0; cnt<pdata->gpiocnt; cnt++)
+		gpiod_set_value(pdata->gpio[cnt], 0);
 
 	return (irqreturn_t)IRQ_HANDLED;
 }
@@ -54,12 +100,10 @@ static void my_timer_callback(struct timer_list *t)
 	unsigned int timej;
 	u8 cnt;
 
-	if(pdata->ledMode != 0) {
-		timej = (pdata->tms >= 1000) ? (HZ * (pdata->tms / 1000)) : (HZ / (1000 / pdata->tms));
-		mod_timer(&pdata->my_timer, jiffies + timej);
-		//dev_info(&pdata->pdev->dev, "Jiffies: %ld\n", jiffies);
-		pr_debug("pr_debug: Jiffies: %ld\n", jiffies);
-	}
+	timej = (pdata->tms >= 1000) ? (HZ * (pdata->tms / 1000)) : (HZ / (1000 / pdata->tms));
+	mod_timer(&pdata->my_timer, jiffies + timej);
+	//dev_info(&pdata->pdev->dev, "Jiffies: %ld\n", jiffies);
+	pr_debug("pr_debug: Jiffies: %ld\n", jiffies);
 
 	switch(pdata->ledMode)
 	{
@@ -197,6 +241,24 @@ static int my_pdrv_probe(struct platform_device *pdev)
 		of_property_read_u32(pdev->dev.of_node, "mode", &pdata->ledMode);
 	}
 
+	pdata->dev_attr_tms.attr.name = "timer_ms";
+	pdata->dev_attr_tms.attr.mode = S_IRUGO | S_IWUSR;
+	pdata->dev_attr_tms.show = &tms_show;
+	pdata->dev_attr_tms.store = &tms_store;
+	if(device_create_file(&pdev->dev, &pdata->dev_attr_tms) != 0){
+		dev_err(&pdev->dev, "Error create attribute file %s!", pdata->dev_attr_tms.attr.name);
+		goto fail;
+	}
+	pdata->dev_attr_ledmode.attr.name = "ledmode";
+	pdata->dev_attr_ledmode.attr.mode = S_IRUGO | S_IWUSR;
+	pdata->dev_attr_ledmode.show = &ledmode_show;
+	pdata->dev_attr_ledmode.store = &ledmode_store;
+	if(device_create_file(&pdev->dev, &pdata->dev_attr_ledmode) != 0){
+		device_remove_file(&pdev->dev, &pdata->dev_attr_tms);
+		dev_err(&pdev->dev, "Error create attribute file %s!", pdata->dev_attr_ledmode.attr.name);
+		goto fail;
+	}
+
 	pdata->flag = 0;
 	pdata->pdev = pdev;
 	platform_set_drvdata(pdev, pdata);
@@ -215,6 +277,8 @@ static int my_pdrv_remove(struct platform_device *pdev)
 	struct leds_data *pdata = platform_get_drvdata(pdev);
 	u8 cnt;
 	if(pdata->tms) del_timer(&pdata->my_timer);
+	device_remove_file(&pdev->dev, &pdata->dev_attr_tms);
+	device_remove_file(&pdev->dev, &pdata->dev_attr_ledmode);
 	devm_kfree(&pdev->dev, pdata);
 	for(cnt=0; cnt<pdata->gpiocnt; cnt++)
 		gpiod_set_value(pdata->gpio[cnt], 0);
